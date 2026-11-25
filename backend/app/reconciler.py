@@ -367,8 +367,10 @@ def reconcile_snapshot(
     quant_df: Optional[pd.DataFrame] = None,
     roles: Optional[Dict[str, Any]] = None,
     tolerance_rel: float = 0.001,
+    lang: str = "en",
 ) -> Dict[str, Any]:
     """Compare dashboard-reported values against independent DuckDB calculations."""
+    is_id = str(lang).lower().startswith("id")
     norm_indep: Dict[str, Tuple[str, float]] = {}
     for k, v in independent_kpis.items():
         if isinstance(v, (int, float)) and not isinstance(v, bool):
@@ -410,7 +412,11 @@ def reconcile_snapshot(
                 "abs_diff": None,
                 "pct_diff": None,
                 "status": "NOT_FOUND_IN_DATASET",
-                "diagnosis": "Metric name did not match any computed KPI from the current dataset.",
+                "diagnosis": (
+                    "Nama metrik tidak cocok dengan KPI yang dihitung dari dataset saat ini."
+                    if is_id
+                    else "Metric name did not match any computed KPI from the current dataset."
+                ),
             })
             mismatch_count += 1
             continue
@@ -422,10 +428,10 @@ def reconcile_snapshot(
         if "%" in metric_name or "rate" in metric_name.lower():
             if dash_val <= 1.0 and indep_val > 1.0:
                 adjusted_indep = round(indep_val / 100.0, 6)
-                unit_note = " (normalized % to ratio)"
+                unit_note = " (normalisasi % ke rasio)" if is_id else " (normalized % to ratio)"
             elif dash_val > 1.0 and indep_val <= 1.0:
                 adjusted_indep = round(indep_val * 100.0, 4)
-                unit_note = " (normalized ratio to %)"
+                unit_note = " (normalisasi rasio ke %)" if is_id else " (normalized ratio to %)"
 
         abs_diff = round(dash_val - adjusted_indep, 4)
         denom = abs(adjusted_indep) if abs(adjusted_indep) > 1e-9 else 1.0
@@ -436,11 +442,15 @@ def reconcile_snapshot(
         if is_match:
             status = "MATCH"
             pass_count += 1
-            diagnosis = f"Matched independent DuckDB calculation ({matched_label}){unit_note}."
+            diagnosis = (
+                f"Cocok dengan perhitungan independen DuckDB ({matched_label}){unit_note}."
+                if is_id
+                else f"Matched independent DuckDB calculation ({matched_label}){unit_note}."
+            )
         else:
             status = "MISMATCH"
             mismatch_count += 1
-            diagnosis = _diagnose_mismatch(metric_name, dash_val, adjusted_indep, abs_diff, quant_df, roles)
+            diagnosis = _diagnose_mismatch(metric_name, dash_val, adjusted_indep, abs_diff, quant_df, roles, lang=lang)
 
         results.append({
             "metric": metric_name,
@@ -471,18 +481,40 @@ def _diagnose_mismatch(
     abs_diff: float,
     quant_df: Optional[pd.DataFrame],
     roles: Optional[Dict[str, Any]],
+    lang: str = "en",
 ) -> str:
+    is_id = str(lang).lower().startswith("id")
     if abs(abs_diff) < 1.0:
-        return "Small rounding/decimal precision difference (< 1.0). Check rounding rules."
+        return (
+            "Selisih pembulatan/presisi desimal kecil (< 1.0). Periksa aturan pembulatan."
+            if is_id
+            else "Small rounding/decimal precision difference (< 1.0). Check rounding rules."
+        )
     if quant_df is not None and roles:
         id_col = roles.get("id_col")
         if id_col and id_col in quant_df.columns and ("order" in metric_name.lower() or "record" in metric_name.lower()):
             row_cnt = len(quant_df)
             uniq_cnt = int(quant_df[id_col].nunique())
             if abs(dash_val - row_cnt) < 1e-4 and row_cnt != uniq_cnt:
-                return f"Dashboard appears to count raw rows ({row_cnt}) instead of distinct {id_col} ({uniq_cnt})."
+                return (
+                    f"Dashboard tampaknya menghitung baris mentah ({row_cnt}), bukan nilai unik {id_col} ({uniq_cnt})."
+                    if is_id
+                    else f"Dashboard appears to count raw rows ({row_cnt}) instead of distinct {id_col} ({uniq_cnt})."
+                )
     if "%" in metric_name or "rate" in metric_name.lower():
-        return "Denominator mismatch suspected (e.g. dividing by all rows instead of valid rows, or unfiltered scope)."
+        return (
+            "Diduga ada perbedaan penyebut (denominator), misalnya membagi dengan seluruh baris alih-alih baris valid."
+            if is_id
+            else "Denominator mismatch suspected (e.g. dividing by all rows instead of valid rows, or unfiltered scope)."
+        )
     if dash_val < indep_val:
-        return "Dashboard value is lower than independent baseline — check active date/status filters or excluded records."
-    return "Dashboard value is higher than independent baseline — check duplicate joins or unexcluded cancelled/refunded rows."
+        return (
+            "Nilai dashboard lebih rendah dari baseline independen — periksa filter tanggal/status yang aktif."
+            if is_id
+            else "Dashboard value is lower than independent baseline — check active date/status filters or excluded records."
+        )
+    return (
+        "Nilai dashboard lebih tinggi dari baseline independen — periksa kemungkinan join duplikat atau baris batal/refund yang belum dikeluarkan."
+        if is_id
+        else "Dashboard value is higher than independent baseline — check duplicate joins or unexcluded cancelled/refunded rows."
+    )

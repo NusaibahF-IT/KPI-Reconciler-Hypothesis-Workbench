@@ -63,6 +63,7 @@ class MemoRequest(BaseModel):
     hypotheses: List[Dict[str, Any]] = []
     analyst_decision_summary: str = ""
     recommended_actions: List[str] = []
+    lang: str = "en"
 
 
 def _load_sample_bundle(case_id: str):
@@ -117,6 +118,7 @@ def analyze_sample(
     flag_col: Optional[str] = None,
     slice_col: Optional[str] = None,
     slice_val: Optional[str] = None,
+    lang: str = "en",
 ):
     cfg, quant_df, sentiment_df, snapshot_items = _load_sample_bundle(case_id)
     roles = infer_dataset_roles(quant_df, sentiment_df)
@@ -130,7 +132,7 @@ def analyze_sample(
         slice_val=slice_val,
     )
     reconciliation = reconcile_snapshot(
-        indep["all_reconcilable_kpis"], snapshot_items, quant_df=quant_df, roles=roles
+        indep["all_reconcilable_kpis"], snapshot_items, quant_df=quant_df, roles=roles, lang=lang
     )
     hyp = generate_business_hypotheses(
         quant_df,
@@ -138,6 +140,7 @@ def analyze_sample(
         target_metric=target_metric,
         flag_col=flag_col,
         roles=roles,
+        lang=lang,
     )
     return {
         "dataset_name": cfg["label"],
@@ -159,6 +162,7 @@ async def analyze_upload(
     flag_col: Optional[str] = Form(None),
     slice_col: Optional[str] = Form(None),
     slice_val: Optional[str] = Form(None),
+    lang: str = Form("en"),
 ):
     if not quant_file.filename:
         raise HTTPException(status_code=400, detail="Missing quantitative file.")
@@ -201,7 +205,7 @@ async def analyze_upload(
         slice_val=slice_val or None,
     )
     reconciliation = reconcile_snapshot(
-        indep["all_reconcilable_kpis"], snapshot_items, quant_df=quant_df, roles=roles
+        indep["all_reconcilable_kpis"], snapshot_items, quant_df=quant_df, roles=roles, lang=lang
     )
     hyp = generate_business_hypotheses(
         quant_df,
@@ -209,6 +213,7 @@ async def analyze_upload(
         target_metric=target_metric or None,
         flag_col=flag_col or None,
         roles=roles,
+        lang=lang,
     )
     return {
         "dataset_name": quant_file.filename,
@@ -230,6 +235,7 @@ async def reconcile_custom_snapshot(
     flag_col: Optional[str] = Form(None),
     slice_col: Optional[str] = Form(None),
     slice_val: Optional[str] = Form(None),
+    lang: str = Form("en"),
 ):
     """Re-run Gate 1 assertions when analyst edits dashboard snapshot values or tests a slice."""
     try:
@@ -260,7 +266,7 @@ async def reconcile_custom_snapshot(
         slice_val=slice_val or None,
     )
     reconciliation = reconcile_snapshot(
-        indep["all_reconcilable_kpis"], snapshot_items, quant_df=quant_df, roles=roles
+        indep["all_reconcilable_kpis"], snapshot_items, quant_df=quant_df, roles=roles, lang=lang
     )
     return {"independent": indep, "reconciliation": reconciliation}
 

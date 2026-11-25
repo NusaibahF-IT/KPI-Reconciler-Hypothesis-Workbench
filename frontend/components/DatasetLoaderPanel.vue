@@ -2,23 +2,18 @@
   <section class="card-bento p-6 md:p-7">
     <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-5">
       <div>
-        <span class="sticker mb-2">Step 1 · Load Verified Dataset &amp; Dashboard Snapshot</span>
-        <h2 class="text-xl md:text-2xl font-extrabold text-tx">
-          Select Bootcamp Case or Upload Custom Datasets
-        </h2>
-        <p class="text-xs md:text-sm text-tx/75 mt-1">
-          Maintains separate <strong>Quantitative</strong> and <strong>Sentiment</strong> layers (S9 guardrail) — never forces invalid joins.
-        </p>
+        <span class="sticker mb-2">{{ t.step1Badge }}</span>
+        <h2 class="text-xl md:text-2xl font-extrabold text-tx">{{ t.step1Title }}</h2>
+        <p class="text-xs md:text-sm text-tx/75 mt-1">{{ t.step1Desc }}</p>
       </div>
       <span v-if="loading" class="text-xs font-mono font-bold text-act animate-pulse">
-        Running DuckDB assertions &amp; signal scan...
+        {{ t.runningScan }}
       </span>
     </div>
 
-    <!-- Quick-Load Bootcamp Cases -->
     <div v-if="samples.length > 0" class="mb-5 pb-5 border-b border-line">
       <span class="text-xs font-extrabold uppercase tracking-wider text-tx/70 block mb-2.5">
-        Quick-Load Bootcamp Cases:
+        {{ t.quickLoad }}
       </span>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
         <button
@@ -36,10 +31,9 @@
       </div>
     </div>
 
-    <!-- Custom Upload Form -->
     <form class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end" @submit.prevent="submitUpload">
       <label class="block text-xs">
-        <span class="font-bold text-tx block mb-1">1. Quantitative Dataset (CSV/XLSX) *</span>
+        <span class="font-bold text-tx block mb-1">{{ t.quantLabel }}</span>
         <input
           type="file"
           accept=".csv,.xlsx,.xls"
@@ -49,7 +43,7 @@
       </label>
 
       <label class="block text-xs">
-        <span class="font-bold text-tx block mb-1">2. Separate Sentiment CSV (Optional)</span>
+        <span class="font-bold text-tx block mb-1">{{ t.sentimentLabel }}</span>
         <input
           type="file"
           accept=".csv,.xlsx,.xls"
@@ -59,7 +53,7 @@
       </label>
 
       <label class="block text-xs">
-        <span class="font-bold text-tx block mb-1">3. Dashboard Snapshot CSV (Optional)</span>
+        <span class="font-bold text-tx block mb-1">{{ t.snapshotLabel }}</span>
         <input
           type="file"
           accept=".csv,.xlsx,.xls"
@@ -74,7 +68,7 @@
           :disabled="!quantFile || loading"
           class="btn btn-primary text-xs py-2 px-5 disabled:opacity-40"
         >
-          Analyze Uploaded Files →
+          {{ t.analyzeBtn }}
         </button>
       </div>
     </form>
@@ -87,7 +81,8 @@ import { ref } from 'vue'
 defineProps({
   samples: { type: Array, default: () => [] },
   activeSampleId: { type: String, default: null },
-  loading: { type: Boolean, default: false }
+  loading: { type: Boolean, default: false },
+  t: { type: Object, required: true }
 })
 
 const emit = defineEmits(['load-sample', 'upload-files'])

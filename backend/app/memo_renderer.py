@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 
 def render_insight_memo_markdown(payload: Dict[str, Any]) -> str:
     """Render an executive 1-page Insight Memo from verified KPIs & analyst-reviewed hypotheses."""
+    is_id = str(payload.get("lang", "en")).lower().startswith("id")
     dataset_name = payload.get("dataset_name", "Dataset")
     analyst_name = payload.get("analyst_name", "Data Analyst")
     reconciliation = payload.get("reconciliation") or {}
@@ -20,13 +21,13 @@ def render_insight_memo_markdown(payload: Dict[str, Any]) -> str:
     chosen = accepted if accepted else (needs_data + pending)[:5]
 
     lines = [
-        f"# Insight Memo & KPI Reconciliation Brief — {dataset_name}",
-        f"- **Prepared by:** {analyst_name}",
-        f"- **Generated (UTC):** {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}",
-        f"- **KPI Reconciliation Gate:** `{reconciliation.get('overall_gate', 'NOT_RUN')}` "
-        f"({reconciliation.get('matched', 0)}/{reconciliation.get('total_assertions', 0)} assertions matched)",
+        f"# {'Memo Insight & Ringkasan Rekonsiliasi KPI' if is_id else 'Insight Memo & KPI Reconciliation Brief'} — {dataset_name}",
+        f"- **{'Disusun oleh' if is_id else 'Prepared by'}:** {analyst_name}",
+        f"- **{'Dibuat (UTC)' if is_id else 'Generated (UTC)'}:** {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}",
+        f"- **{'Gate Rekonsiliasi KPI' if is_id else 'KPI Reconciliation Gate'}:** `{reconciliation.get('overall_gate', 'NOT_RUN')}` "
+        f"({reconciliation.get('matched', 0)}/{reconciliation.get('total_assertions', 0)} {'asersi cocok' if is_id else 'assertions matched'})",
         "",
-        "## 1. KPI Verification Summary (Gate 1)",
+        f"## 1. {'Ringkasan Verifikasi KPI (Gate 1)' if is_id else 'KPI Verification Summary (Gate 1)'}",
         "",
     ]
 
@@ -41,40 +42,44 @@ def render_insight_memo_markdown(payload: Dict[str, Any]) -> str:
                 f"{row.get('abs_diff')} | **{row.get('status')}** |"
             )
     else:
-        lines.append("_No dashboard snapshot assertions were supplied._")
+        lines.append("_Belum ada snapshot dashboard yang diuji._" if is_id else "_No dashboard snapshot assertions were supplied._")
 
     lines.extend([
         "",
-        "## 2. Analyst-Reviewed Business Hypotheses (Gate 2)",
+        f"## 2. {'Hipotesa Bisnis yang Ditinjau Analis (Gate 2)' if is_id else 'Analyst-Reviewed Business Hypotheses (Gate 2)'}",
         "",
     ])
 
     if not chosen:
-        lines.append("_No hypotheses selected._")
+        lines.append("_Tidak ada hipotesa yang dipilih._" if is_id else "_No hypotheses selected._")
     else:
         for h in chosen:
             status_label = str(h.get("analyst_status", "pending_review")).upper()
             lines.append(f"### {h.get('hypothesis_id')}: {h.get('category')} — `{h.get('dimension')} = {h.get('segment')}` [{status_label}]")
-            lines.append(f"- **Observed Signal:** {h.get('observed_signal')}")
-            lines.append(f"- **Candidate Hypothesis:** {h.get('candidate_hypothesis')}")
+            lines.append(f"- **{'Sinyal Teramati (Fakta)' if is_id else 'Observed Signal'}:** {h.get('observed_signal')}")
+            lines.append(f"- **{'Kandidat Hipotesa' if is_id else 'Candidate Hypothesis'}:** {h.get('candidate_hypothesis')}")
             if h.get("analyst_note"):
-                lines.append(f"- **Analyst Note:** {h.get('analyst_note')}")
+                lines.append(f"- **{'Catatan Analis' if is_id else 'Analyst Note'}:** {h.get('analyst_note')}")
             alts = h.get("alternative_explanations") or []
             if alts:
-                lines.append(f"- **Alternative Explanations:** {'; '.join(alts)}")
+                lines.append(f"- **{'Penjelasan Alternatif' if is_id else 'Alternative Explanations'}:** {'; '.join(alts)}")
             checks = h.get("verification_checks_needed") or []
             if checks:
-                lines.append(f"- **Verification Checks:** {'; '.join(checks)}")
+                lines.append(f"- **{'Cek Verifikasi Lanjutan' if is_id else 'Verification Checks'}:** {'; '.join(checks)}")
             lines.append("")
 
     lines.extend([
-        "## 3. Analyst Decision & Business Recommendations (Human-in-the-Loop)",
+        f"## 3. {'Keputusan Analis & Rekomendasi Bisnis (Human-in-the-Loop)' if is_id else 'Analyst Decision & Business Recommendations (Human-in-the-Loop)'}",
         "",
-        analyst_summary or "_To be finalized by the Data Analyst after completing the verification checks above._",
+        analyst_summary or (
+            "_Menunggu finalisasi oleh Data Analyst setelah menyelesaikan cek verifikasi di atas._"
+            if is_id
+            else "_To be finalized by the Data Analyst after completing the verification checks above._"
+        ),
         "",
     ])
     if recommended_actions:
-        lines.append("**Proposed Actions:**")
+        lines.append(f"**{'Usulan Aksi' if is_id else 'Proposed Actions'}:**")
         for idx, act in enumerate(recommended_actions, 1):
             if str(act).strip():
                 lines.append(f"{idx}. {act.strip()}")

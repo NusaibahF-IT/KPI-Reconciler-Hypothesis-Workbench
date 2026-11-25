@@ -90,6 +90,28 @@ def test_external_saas_churn_domain_agnostic_override():
     assert data["hypothesis_report"]["target_metric"] == "ad_spend"
 
 
+def test_indonesian_localization_on_hypotheses_and_memo():
+    resp = client.post("/api/analyze/sample/swiftbite_capstone?lang=id")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "Cocok dengan perhitungan independen DuckDB" in data["reconciliation"]["results"][0]["diagnosis"]
+    hyps = data["hypothesis_report"]["hypotheses"]
+    assert any("Kandidat hipotesa:" in h["candidate_hypothesis"] for h in hyps)
+
+    memo_resp = client.post(
+        "/api/memo/export",
+        json={
+            "dataset_name": "SwiftBite",
+            "analyst_name": "Nusaibah",
+            "reconciliation": data["reconciliation"],
+            "hypotheses": hyps[:1],
+            "lang": "id",
+        },
+    )
+    assert memo_resp.status_code == 200
+    assert "Memo Insight & Ringkasan Rekonsiliasi KPI" in memo_resp.text
+
+
 def test_mismatch_detection_and_upload_and_memo_export():
     csv_bytes = (
         "order_id,order_date,sales_channel,order_total\n"

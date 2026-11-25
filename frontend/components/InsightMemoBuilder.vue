@@ -2,19 +2,17 @@
   <div class="card-bento p-6 space-y-5">
     <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
       <div>
-        <h3 class="text-lg font-extrabold text-tx">Gate 3 · Analyst Decision &amp; 1-Page Insight Memo</h3>
-        <p class="text-xs text-tx/70 mt-0.5">
-          Only analyst-approved (or pending) hypotheses are exported — rejected hypotheses are excluded automatically.
-        </p>
+        <h3 class="text-lg font-extrabold text-tx">{{ t.gate3Title }}</h3>
+        <p class="text-xs text-tx/70 mt-0.5">{{ t.gate3Desc }}</p>
       </div>
       <button type="button" :disabled="exporting" class="btn btn-mint text-xs py-2 px-4" @click="exportMemo">
-        {{ exporting ? 'Generating Memo...' : 'Export Insight Memo (.md) ↓' }}
+        {{ exporting ? t.generatingMemo : t.exportMemo }}
       </button>
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <label class="block text-xs">
-        <span class="font-bold text-tx block mb-1">Analyst Name</span>
+        <span class="font-bold text-tx block mb-1">{{ t.analystName }}</span>
         <input
           v-model="analystName"
           type="text"
@@ -23,28 +21,28 @@
       </label>
 
       <label class="block text-xs">
-        <span class="font-bold text-tx block mb-1">Proposed Actions (comma-separated)</span>
+        <span class="font-bold text-tx block mb-1">{{ t.proposedActions }}</span>
         <input
           v-model="actionsText"
           type="text"
-          placeholder="e.g. Audit Fast Food prep SLA, Reconcile Marketplace filter"
+          :placeholder="t.actionsPlaceholder"
           class="w-full px-3.5 py-2 rounded-xl border border-line bg-canvas text-xs text-tx"
         />
       </label>
     </div>
 
     <label class="block text-xs">
-      <span class="font-bold text-tx block mb-1">Analyst Decision &amp; Executive Summary</span>
+      <span class="font-bold text-tx block mb-1">{{ t.decisionSummary }}</span>
       <textarea
         v-model="decisionSummary"
         rows="4"
-        placeholder="Write your evidence-based business conclusion and trade-offs here..."
+        :placeholder="t.decisionPlaceholder"
         class="w-full px-3.5 py-2.5 rounded-xl border border-line bg-canvas text-xs text-tx"
       />
     </label>
 
     <div v-if="previewMd" class="p-4 rounded-xl bg-canvas border border-line">
-      <div class="text-[11px] font-mono font-bold text-tx/65 mb-2">Generated Memo Preview</div>
+      <div class="text-[11px] font-mono font-bold text-tx/65 mb-2">{{ t.memoPreview }}</div>
       <pre class="whitespace-pre-wrap font-mono text-xs text-tx/90 leading-relaxed">{{ previewMd }}</pre>
     </div>
   </div>
@@ -57,7 +55,9 @@ const props = defineProps({
   datasetName: { type: String, default: 'Dataset' },
   reconciliation: { type: Object, default: () => ({}) },
   hypotheses: { type: Array, default: () => [] },
-  apiBase: { type: String, required: true }
+  apiBase: { type: String, required: true },
+  lang: { type: String, default: 'en' },
+  t: { type: Object, required: true }
 })
 
 const analystName = ref('Nusaibah Fathul Jannah')
@@ -83,7 +83,8 @@ async function exportMemo() {
         reconciliation: props.reconciliation,
         hypotheses: props.hypotheses,
         analyst_decision_summary: decisionSummary.value,
-        recommended_actions: actions
+        recommended_actions: actions,
+        lang: props.lang
       })
     })
     if (!resp.ok) throw new Error('Failed to generate Insight Memo.')

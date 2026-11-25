@@ -1,4 +1,4 @@
-"""Gate 2: Domain-Agnostic Business Signal & Hypothesis Generator (Anti-Hallucination)."""
+"""Gate 2: Domain-Agnostic & Bilingual Business Signal & Hypothesis Generator."""
 from __future__ import annotations
 
 import re
@@ -26,17 +26,25 @@ COMPLAINT_KEYWORDS: Dict[str, List[str]] = {
 }
 
 
-def _check_apple_to_apple_dates(df: pd.DataFrame, date_col: Optional[str]) -> Dict[str, Any]:
+def _check_apple_to_apple_dates(df: pd.DataFrame, date_col: Optional[str], is_id: bool) -> Dict[str, Any]:
     if not date_col or date_col not in df.columns:
         return {
             "has_date_col": False,
-            "warning": "No date column detected; time-period normalization skipped.",
+            "warning": (
+                "Kolom tanggal tidak terdeteksi; normalisasi tren periode dilewati."
+                if is_id
+                else "No date column detected; time-period normalization skipped."
+            ),
         }
     parsed = pd.to_datetime(df[date_col], errors="coerce").dropna()
     if len(parsed) == 0:
         return {
             "has_date_col": False,
-            "warning": f"Date column '{date_col}' has no parseable timestamps.",
+            "warning": (
+                f"Kolom tanggal '{date_col}' tidak memiliki format waktu yang terbaca."
+                if is_id
+                else f"Date column '{date_col}' has no parseable timestamps."
+            ),
         }
     min_dt = parsed.min()
     max_dt = parsed.max()
@@ -64,7 +72,6 @@ def _extract_top_complaint_themes(texts: pd.Series) -> List[Dict[str, Any]]:
         if hits > 0:
             themes.append({"theme": theme, "mentions": hits})
 
-    # Fallback: dynamic frequent token extraction for arbitrary domains
     if not themes:
         tokens: List[str] = []
         for t in clean_texts.tolist():
@@ -86,17 +93,23 @@ def generate_business_hypotheses(
     flag_col: Optional[str] = None,
     selected_dimensions: Optional[List[str]] = None,
     roles: Optional[Dict[str, Any]] = None,
+    lang: str = "en",
 ) -> Dict[str, Any]:
     """Generate domain-agnostic Candidate Business Hypotheses (never final prescriptions)."""
+    is_id = str(lang).lower().startswith("id")
     roles = roles or infer_dataset_roles(quant_df, sentiment_df)
     value_col = target_metric if (target_metric and target_metric in quant_df.columns) else roles.get("value_col")
-    active_flag_col = flag_col if (flag_col and flag_col in quant_df.columns) else (None if flag_col == "__none__" else roles.get("flag_col"))
+    active_flag_col = (
+        flag_col
+        if (flag_col and flag_col in quant_df.columns)
+        else (None if flag_col == "__none__" else roles.get("flag_col"))
+    )
     dimensions = [
         d for d in (selected_dimensions or roles.get("dimensions", []))
         if d in quant_df.columns and d != active_flag_col and d != value_col
     ][:6]
 
-    date_coverage = _check_apple_to_apple_dates(quant_df, roles.get("date_col"))
+    date_coverage = _check_apple_to_apple_dates(quant_df, roles.get("date_col"), is_id)
 
     con = duckdb.connect(":memory:")
     _register_df(con, "q_tbl", quant_df)
@@ -197,22 +210,39 @@ def generate_business_hypotheses(
                         dimension=dim,
                         segment=top_avg["segment"],
                         observed_signal=(
+                            f"Pada dimensi '{dim}', segmen '{top_avg['segment']}' memiliki rata-rata {value_col} sebesar {top_avg['avg_value']:,.2f} "
+                            f"({lift_pct:+.1f}% dibanding rata-rata keseluruhan {overall_mean_val:,.2f}) dari {top_avg['count']} data, "
+                            f"serta menyumbang {top_avg['share_pct']}% dari total {value_col}."
+                            if is_id else
                             f"Under '{dim}', segment '{top_avg['segment']}' averages {top_avg['avg_value']:,.2f} for {value_col} "
                             f"({lift_pct:+.1f}% vs overall mean {overall_mean_val:,.2f}) across {top_avg['count']} records, "
                             f"accounting for {top_avg['share_pct']}% of total {value_col}."
                         ),
                         candidate_hypothesis=(
+                            f"Kandidat hipotesa: '{top_avg['segment']}' berperan sebagai pendorong utama {value_col}, "
+                            f"kemungkinan dipengaruhi komposisi produk/paket, tingkat harga, atau volume keterlibatan yang lebih tinggi."
+                            if is_id else
                             f"Candidate hypothesis: '{top_avg['segment']}' acts as a primary driver of {value_col}, potentially due to "
                             f"unit mix, pricing tier, or higher engagement/volume in this segment."
                         ),
-                        alternative_explanations=[
-                            "Mean may be pulled upward by extreme outliers (compare against median).",
-                            "Segment composition may overlap with another confounding dimension (e.g. region or plan tier).",
-                        ],
-                        verification_checks=[
-                            f"Compare median {value_col} ({top_avg['median_value']:,.2f}) vs mean ({top_avg['avg_value']:,.2f}) to rule out outlier skew.",
-                            f"Cross-tab '{dim}' against other key dimensions before prioritizing resource allocation.",
-                        ],
+                        alternative_explanations=(
+                            [
+                                "Nilai rata-rata bisa tertarik ke atas oleh beberapa transaksi ekstrem (bandingkan dengan median).",
+                                "Komposisi segmen ini mungkin bertumpang tindih dengan dimensi lain (mis. wilayah atau tier pelanggan).",
+                            ] if is_id else [
+                                "Mean may be pulled upward by extreme outliers (compare against median).",
+                                "Segment composition may overlap with another confounding dimension (e.g. region or plan tier).",
+                            ]
+                        ),
+                        verification_checks=(
+                            [
+                                f"Bandingkan median {value_col} ({top_avg['median_value']:,.2f}) dengan rata-rata ({top_avg['avg_value']:,.2f}) untuk memastikan tidak bias outlier.",
+                                f"Lakukan tabulasi silang '{dim}' dengan dimensi utama lain sebelum mengubah alokasi strategi.",
+                            ] if is_id else [
+                                f"Compare median {value_col} ({top_avg['median_value']:,.2f}) vs mean ({top_avg['avg_value']:,.2f}) to rule out outlier skew.",
+                                f"Cross-tab '{dim}' against other key dimensions before prioritizing resource allocation.",
+                            ]
+                        ),
                         metrics=top_avg,
                     )
 
@@ -227,25 +257,41 @@ def generate_business_hypotheses(
                         dimension=dim,
                         segment=low_avg["segment"],
                         observed_signal=(
+                            f"Segmen '{low_avg['segment']}' pada '{dim}' mencatat rata-rata {value_col} sebesar {low_avg['avg_value']:,.2f} "
+                            f"({drop_pct:.1f}% di bawah rata-rata keseluruhan) dari {low_avg['count']} data."
+                            if is_id else
                             f"Segment '{low_avg['segment']}' under '{dim}' averages {low_avg['avg_value']:,.2f} for {value_col} "
                             f"({drop_pct:.1f}% below overall mean) across {low_avg['count']} records."
                         ),
                         candidate_hypothesis=(
+                            f"Kandidat hipotesa: Rendahnya {value_col} di '{low_avg['segment']}' dapat disebabkan oleh dominasi paket/item entry-level, "
+                            f"ketergantungan diskon/biaya, atau hambatan konversi di segmen ini."
+                            if is_id else
                             f"Candidate hypothesis: Lower {value_col} in '{low_avg['segment']}' may reflect entry-level mix, "
                             f"discount/cost pressure, or process friction within this segment."
                         ),
-                        alternative_explanations=[
-                            "Segment naturally serves smaller-scale or entry-tier cases.",
-                            "External mix differences (e.g. channel, tenure, or geography) may explain the lower average.",
-                        ],
-                        verification_checks=[
-                            f"Check volume/count drivers and secondary metrics for '{low_avg['segment']}'.",
-                            "Verify whether lower average coincides with higher failure, churn, or refund rates.",
-                        ],
+                        alternative_explanations=(
+                            [
+                                "Segmen ini memang secara alami melayani transaksi skala kecil atau tier dasar.",
+                                "Perbedaan komposisi kanal, masa bergabung, atau lokasi bisa menjelaskan rata-rata yang lebih rendah.",
+                            ] if is_id else [
+                                "Segment naturally serves smaller-scale or entry-tier cases.",
+                                "External mix differences (e.g. channel, tenure, or geography) may explain the lower average.",
+                            ]
+                        ),
+                        verification_checks=(
+                            [
+                                f"Periksa distribusi jumlah item/volume dan metrik pendukung lain pada '{low_avg['segment']}'.",
+                                "Pastikan apakah nilai rata-rata rendah ini beriringan dengan tingginya pembatalan, churn, atau refund.",
+                            ] if is_id else [
+                                f"Check volume/count drivers and secondary metrics for '{low_avg['segment']}'.",
+                                "Verify whether lower average coincides with higher failure, churn, or refund rates.",
+                            ]
+                        ),
                         metrics=low_avg,
                     )
 
-    # 2. Binary Outcome / Rate Anomaly Hypotheses (works for is_late, is_churned, attrition, etc.)
+    # 2. Binary Outcome / Rate Anomaly Hypotheses
     delivery_status_col = roles.get("delivery_status_col")
     if active_flag_col and active_flag_col in quant_df.columns and total_rows > 0:
         if "late" in active_flag_col.lower() and delivery_status_col and delivery_status_col in quant_df.columns:
@@ -274,21 +320,37 @@ def generate_business_hypotheses(
                             dimension=dim,
                             segment=str(seg),
                             observed_signal=(
+                                f"Tingkat kejadian '{active_flag_col}' pada '{seg}' ({dim}) mencapai {rate_pct}% "
+                                f"({int(r['sum'])}/{cnt} data), yaitu +{pp_gap} poin persentase di atas baseline ({base_rate:.2f}%)."
+                                if is_id else
                                 f"Positive rate of '{active_flag_col}' for '{seg}' ({dim}) reached {rate_pct}% "
                                 f"({int(r['sum'])}/{cnt} records), which is +{pp_gap} percentage points above baseline ({base_rate:.2f}%)."
                             ),
                             candidate_hypothesis=(
+                                f"Kandidat hipotesa: '{seg}' mengalami lonjakan '{active_flag_col}' yang kemungkinan berkaitan "
+                                f"dengan bottleneck operasional, hambatan proses spesifik segmen, atau perbedaan target/SLA."
+                                if is_id else
                                 f"Candidate hypothesis: '{seg}' experiences elevated '{active_flag_col}' incidence, potentially linked "
                                 f"to operational bottlenecks, segment-specific friction, or targeting differences."
                             ),
-                            alternative_explanations=[
-                                "Sub-segment differences or seasonal clustering could inflate the rate in this slice.",
-                                "Sample size or reporting completeness may vary across segments.",
-                            ],
-                            verification_checks=[
-                                f"Inspect secondary operational drivers within '{dim} = {seg}'.",
-                                "Check whether the elevated rate persists across multiple time sub-periods.",
-                            ],
+                            alternative_explanations=(
+                                [
+                                    "Konsentrasi sub-segmen atau jam sibuk/musim tertentu dapat menaikkan persentase di irisan ini.",
+                                    "Ukuran sampel atau kelengkapan pencatatan bisa berbeda antar-segmen.",
+                                ] if is_id else [
+                                    "Sub-segment differences or seasonal clustering could inflate the rate in this slice.",
+                                    "Sample size or reporting completeness may vary across segments.",
+                                ]
+                            ),
+                            verification_checks=(
+                                [
+                                    f"Telusuri metrik operasional pendukung di dalam irisan '{dim} = {seg}'.",
+                                    "Cek apakah tingginya rate ini konsisten di beberapa sub-periode waktu.",
+                                ] if is_id else [
+                                    f"Inspect secondary operational drivers within '{dim} = {seg}'.",
+                                    "Check whether the elevated rate persists across multiple time sub-periods.",
+                                ]
+                            ),
                             metrics={"record_count": cnt, "flag_true_count": int(r["sum"]), "rate_pct": rate_pct, "baseline_pct": round(base_rate, 2)},
                         )
 
@@ -310,7 +372,8 @@ def generate_business_hypotheses(
             run_rate_2 = float(p2[value_col].sum()) / d2
             rr_delta_pct = round(((run_rate_2 - run_rate_1) / abs(run_rate_1)) * 100, 1) if run_rate_1 != 0 else 0.0
             if abs(rr_delta_pct) >= 10.0:
-                direction = "increased" if rr_delta_pct > 0 else "declined"
+                direction_en = "increased" if rr_delta_pct > 0 else "declined"
+                direction_id = "meningkat" if rr_delta_pct > 0 else "menurun"
                 add_hypothesis(
                     category="Period Run-Rate Shift",
                     signal_strength="Strong" if abs(rr_delta_pct) >= 20.0 else "Moderate",
@@ -318,25 +381,41 @@ def generate_business_hypotheses(
                     dimension=dcol,
                     segment="Period 1 vs Period 2",
                     observed_signal=(
-                        f"Normalized daily {value_col} run-rate {direction} by {rr_delta_pct:+.1f}% from Period 1 "
+                        f"Laju harian ternormalisasi ({value_col}) {direction_id} sebesar {rr_delta_pct:+.1f}% dari Periode 1 "
+                        f"({run_rate_1:,.2f}/hari selama {d1} hari aktif) ke Periode 2 ({run_rate_2:,.2f}/hari selama {d2} hari aktif)."
+                        if is_id else
+                        f"Normalized daily {value_col} run-rate {direction_en} by {rr_delta_pct:+.1f}% from Period 1 "
                         f"({run_rate_1:,.2f}/day over {d1} active days) to Period 2 ({run_rate_2:,.2f}/day over {d2} active days)."
                     ),
                     candidate_hypothesis=(
+                        f"Kandidat hipotesa: Perubahan bauran kanal akuisisi, ritme promo/harga, atau kapasitas operasional "
+                        f"di antara dua paruh waktu ini berpotensi menjelaskan perubahan laju harian tersebut."
+                        if is_id else
                         f"Candidate hypothesis: Changes in acquisition mix, pricing/campaign cadence, or operational throughput "
-                        f"between the two halves may explain the {direction} daily run-rate."
+                        f"between the two halves may explain the {direction_en} daily run-rate."
                     ),
-                    alternative_explanations=[
-                        f"Period 1 ({d1} active days) and Period 2 ({d2} active days) may reflect calendar/seasonality differences.",
-                        "One-off outlier records can skew period run-rates.",
-                    ],
-                    verification_checks=[
-                        "Decompose daily run-rate delta into record volume change vs average value per record.",
-                        "Compare segment mix shifts between Period 1 and Period 2.",
-                    ],
+                    alternative_explanations=(
+                        [
+                            f"Periode 1 ({d1} hari aktif) dan Periode 2 ({d2} hari aktif) mungkin mencakup efek kalender/musiman yang berbeda.",
+                            "Adanya transaksi outlier di salah satu periode dapat menggeser rata-rata harian.",
+                        ] if is_id else [
+                            f"Period 1 ({d1} active days) and Period 2 ({d2} active days) may reflect calendar/seasonality differences.",
+                            "One-off outlier records can skew period run-rates.",
+                        ]
+                    ),
+                    verification_checks=(
+                        [
+                            "Urai perubahan laju harian menjadi perubahan jumlah transaksi vs rata-rata nilai per transaksi.",
+                            "Bandingkan pergeseran komposisi segmen antara Periode 1 dan Periode 2.",
+                        ] if is_id else [
+                            "Decompose daily run-rate delta into record volume change vs average value per record.",
+                            "Compare segment mix shifts between Period 1 and Period 2.",
+                        ]
+                    ),
                     metrics={"period1_daily_rate": round(run_rate_1, 2), "period2_daily_rate": round(run_rate_2, 2), "delta_pct": rr_delta_pct, "days_p1": d1, "days_p2": d2},
                 )
 
-    # 4. Separate Sentiment / Feedback Layer Convergent Signal (No Forced Join!)
+    # 4. Separate Sentiment / Feedback Layer Convergent Signal
     sentiment_col = roles.get("sentiment_col")
     text_col = roles.get("text_col")
     sent_source = sentiment_df if sentiment_df is not None else quant_df
@@ -366,7 +445,9 @@ def generate_business_hypotheses(
                                 text_col,
                             ]
                             themes = _extract_top_complaint_themes(neg_texts)
-                        layer_note = "separate unjoined feedback layer (S9 guardrail)" if sentiment_df is not None else "inline feedback column"
+                        layer_note_en = "separate unjoined feedback layer (S9 guardrail)" if sentiment_df is not None else "inline feedback column"
+                        layer_note_id = "layer ulasan terpisah tanpa join paksa (guardrail S9)" if sentiment_df is not None else "kolom ulasan pada dataset"
+                        themes_str = ", ".join(t["theme"] + " (" + str(t["mentions"]) + ")" for t in themes)
                         add_hypothesis(
                             category="Customer Sentiment Signal",
                             signal_strength="Strong" if gap >= 10.0 else "Moderate",
@@ -374,22 +455,41 @@ def generate_business_hypotheses(
                             dimension=dim,
                             segment=str(seg),
                             observed_signal=(
-                                f"In {layer_note}, '{seg}' ({dim}) shows {neg_rate}% negative sentiment ({int(r['sum'])}/{cnt} entries), "
-                                f"+{gap}pp above overall negative rate ({base_neg_pct:.2f}%)."
-                                + (f" Recurring themes: {', '.join(t['theme'] + ' (' + str(t['mentions']) + ')' for t in themes)}." if themes else "")
+                                (
+                                    f"Pada {layer_note_id}, '{seg}' ({dim}) mencatat {neg_rate}% sentimen negatif ({int(r['sum'])}/{cnt} ulasan), "
+                                    f"+{gap} poin persentase di atas rata-rata negatif keseluruhan ({base_neg_pct:.2f}%)."
+                                    + (f" Tema keluhan berulang: {themes_str}." if themes_str else "")
+                                ) if is_id else (
+                                    f"In {layer_note_en}, '{seg}' ({dim}) shows {neg_rate}% negative sentiment ({int(r['sum'])}/{cnt} entries), "
+                                    f"+{gap}pp above overall negative rate ({base_neg_pct:.2f}%)."
+                                    + (f" Recurring themes: {themes_str}." if themes_str else "")
+                                )
                             ),
                             candidate_hypothesis=(
+                                f"Kandidat hipotesa: Tingginya sentimen negatif pada '{seg}' mengindikasikan adanya celah kualitas layanan, "
+                                f"pengiriman, atau ekspektasi pelanggan yang perlu diaudit lebih lanjut."
+                                if is_id else
                                 f"Candidate hypothesis: Elevated negative feedback in '{seg}' may reflect recurring service, quality, "
                                 f"or expectation gaps in this segment."
                             ),
-                            alternative_explanations=[
-                                "Response bias: dissatisfied users leave feedback more frequently than satisfied users.",
-                                "If feedback layer is separate from primary records, counts do not imply 1-to-1 record linkage.",
-                            ],
-                            verification_checks=[
-                                "Cross-check quantitative outcome/failure metrics in the same segment without forcing invalid joins.",
-                                "Manually audit 15-25 negative text samples from this segment.",
-                            ],
+                            alternative_explanations=(
+                                [
+                                    "Bias respons ulasan: pelanggan yang kecewa cenderung lebih sering menulis ulasan dibanding pelanggan yang puas.",
+                                    "Jika layer ulasan terpisah dari data transaksi, jumlah ulasan tidak mewakili relasi 1-ke-1 dengan order.",
+                                ] if is_id else [
+                                    "Response bias: dissatisfied users leave feedback more frequently than satisfied users.",
+                                    "If feedback layer is separate from primary records, counts do not imply 1-to-1 record linkage.",
+                                ]
+                            ),
+                            verification_checks=(
+                                [
+                                    "Bandingkan secara paralel dengan metrik keterlambatan/kegagalan transaksi di segmen yang sama tanpa join paksa.",
+                                    "Audit manual 15–25 teks ulasan negatif dari segmen ini untuk memvalidasi label sentimen.",
+                                ] if is_id else [
+                                    "Cross-check quantitative outcome/failure metrics in the same segment without forcing invalid joins.",
+                                    "Manually audit 15-25 negative text samples from this segment.",
+                                ]
+                            ),
                             metrics={"review_count": cnt, "negative_count": int(r["sum"]), "negative_rate_pct": neg_rate, "themes": themes},
                         )
 

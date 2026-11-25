@@ -10,19 +10,37 @@
             <h1 class="text-base md:text-lg font-extrabold tracking-tight text-tx leading-none">
               KPI Reconciler &amp; Business Hypothesis Workbench
             </h1>
-            <p class="text-[11px] font-mono text-tx/65 mt-0.5">
-              FastAPI + DuckDB + Nuxt 3 · Verify Numbers → Hypothesize → Analyst Decision
-            </p>
+            <p class="text-[11px] font-mono text-tx/65 mt-0.5">{{ t.subtitle }}</p>
           </div>
         </div>
 
-        <div class="flex items-center gap-2.5">
+        <div class="flex items-center gap-2">
+          <!-- Language Filter (ID / EN) -->
+          <div class="inline-flex rounded-full border border-line bg-card p-0.5 text-[11px] font-mono font-bold">
+            <button
+              type="button"
+              class="px-2.5 py-1 rounded-full transition-colors"
+              :class="lang === 'id' ? 'bg-field text-ink' : 'text-tx/70 hover:text-tx'"
+              @click="setLang('id')"
+            >
+              ID
+            </button>
+            <button
+              type="button"
+              class="px-2.5 py-1 rounded-full transition-colors"
+              :class="lang === 'en' ? 'bg-field text-ink' : 'text-tx/70 hover:text-tx'"
+              @click="setLang('en')"
+            >
+              EN
+            </button>
+          </div>
+
           <span
             class="hidden sm:inline-flex items-center gap-1.5 chip font-mono"
             :class="apiHealthy ? 'bg-act/15 border-act/50 text-tx' : 'bg-mag/15 border-mag/50 text-mag'"
           >
             <span class="w-2 h-2 rounded-full" :class="apiHealthy ? 'bg-act' : 'bg-mag'" />
-            {{ apiHealthy ? 'API Connected' : 'API Offline' }}
+            {{ apiHealthy ? t.apiConnected : t.apiOffline }}
           </span>
           <button type="button" class="btn btn-outline text-xs py-1.5 px-3" @click="toggleTheme">
             {{ isDark ? '☀ Light' : '☾ Dark' }}
@@ -36,8 +54,9 @@
         :samples="samples"
         :active-sample-id="activeSampleId"
         :loading="loading"
-        @load-sample="loadSample"
-        @upload-files="uploadFiles"
+        :t="t"
+        @load-sample="(id) => loadSample(id)"
+        @upload-files="(files) => uploadFiles(files)"
       />
 
       <div v-if="errorMsg" class="p-4 rounded-xl bg-mag/15 border border-mag/50 text-sm font-semibold text-mag">
@@ -59,7 +78,7 @@
             </button>
           </div>
           <span class="text-xs font-mono text-tx/65">
-            Active Case: <strong>{{ analysis.dataset_name }}</strong>
+            {{ t.activeCase }} <strong>{{ analysis.dataset_name }}</strong>
           </span>
         </div>
 
@@ -70,6 +89,7 @@
           :snapshot-items="analysis.snapshot_items"
           :dimensions="analysis.roles?.dimensions || []"
           :reconciling="reconciling"
+          :t="t"
           @re-reconcile="handleReconcile"
         />
 
@@ -80,6 +100,7 @@
           :numeric-cols="analysis.roles?.numeric_cols || []"
           :binary-flag-cols="analysis.roles?.binary_flag_cols || []"
           :reanalyzing="loading"
+          :t="t"
           @change-columns="handleColumnOverride"
         />
 
@@ -89,6 +110,8 @@
           :reconciliation="analysis.reconciliation"
           :hypotheses="hypotheses"
           :api-base="apiBase"
+          :lang="lang"
+          :t="t"
         />
       </template>
     </main>
@@ -96,16 +119,21 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { UI_TEXT } from '~/composables/useTranslations'
 
 const config = useRuntimeConfig()
 const apiBase = config.public.apiBase
+
+const lang = ref('en')
+const t = computed(() => UI_TEXT[lang.value] || UI_TEXT.en)
 
 const isDark = ref(false)
 const apiHealthy = ref(false)
 const samples = ref([])
 const activeSampleId = ref(null)
 const uploadedFiles = ref(null)
+const selectedColumns = ref({ targetMetric: null, flagCol: null })
 const loading = ref(false)
 const reconciling = ref(false)
 const errorMsg = ref('')
@@ -113,15 +141,25 @@ const analysis = ref(null)
 const hypotheses = ref([])
 const activeTab = ref('reconcile')
 
-const tabs = [
-  { id: 'reconcile', label: '1. KPI Reconciliation Gate' },
-  { id: 'hypotheses', label: '2. Candidate Business Hypotheses' },
-  { id: 'memo', label: '3. Analyst Insight Memo' }
-]
+const tabs = computed(() => [
+  { id: 'reconcile', label: t.value.tabReconcile },
+  { id: 'hypotheses', label: t.value.tabHypotheses },
+  { id: 'memo', label: t.value.tabMemo }
+])
 
 function toggleTheme() {
   isDark.value = !isDark.value
   document.documentElement.setAttribute('data-theme', isDark.value ? 'dark' : 'light')
+}
+
+function setLang(nextLang) {
+  if (lang.value === nextLang) return
+  lang.value = nextLang
+  if (uploadedFiles.value?.quantFile) {
+    uploadFiles(uploadedFiles.value, selectedColumns.value.targetMetric, selectedColumns.value.flagCol)
+  } else if (activeSampleId.value) {
+    loadSample(activeSampleId.value, selectedColumns.value.targetMetric, selectedColumns.value.flagCol)
+  }
 }
 
 async function init() {
@@ -141,14 +179,14 @@ async function init() {
 async function loadSample(caseId, targetMetric = null, flagCol = null) {
   activeSampleId.value = caseId
   uploadedFiles.value = null
+  selectedColumns.value = { targetMetric, flagCol }
   loading.value = true
   errorMsg.value = ''
   try {
-    const params = new URLSearchParams()
+    const params = new URLSearchParams({ lang: lang.value })
     if (targetMetric) params.set('target_metric', targetMetric)
     if (flagCol) params.set('flag_col', flagCol)
-    const qs = params.toString() ? `?${params.toString()}` : ''
-    const resp = await fetch(`${apiBase}/api/analyze/sample/${caseId}${qs}`, { method: 'POST' })
+    const resp = await fetch(`${apiBase}/api/analyze/sample/${caseId}?${params.toString()}`, { method: 'POST' })
     if (!resp.ok) throw new Error(`Failed to analyze sample (${resp.status})`)
     const data = await resp.json()
     analysis.value = data
@@ -163,11 +201,13 @@ async function loadSample(caseId, targetMetric = null, flagCol = null) {
 async function uploadFiles({ quantFile, sentimentFile, snapshotFile }, targetMetric = null, flagCol = null) {
   activeSampleId.value = null
   uploadedFiles.value = { quantFile, sentimentFile, snapshotFile }
+  selectedColumns.value = { targetMetric, flagCol }
   loading.value = true
   errorMsg.value = ''
   try {
     const form = new FormData()
     form.append('quant_file', quantFile)
+    form.append('lang', lang.value)
     if (sentimentFile) form.append('sentiment_file', sentimentFile)
     if (snapshotFile) form.append('snapshot_file', snapshotFile)
     if (targetMetric) form.append('target_metric', targetMetric)
@@ -201,8 +241,11 @@ async function handleReconcile({ snapshotItems, sliceCol, sliceVal }) {
   try {
     const form = new FormData()
     form.append('snapshot_json', JSON.stringify(snapshotItems))
+    form.append('lang', lang.value)
     if (sliceCol) form.append('slice_col', sliceCol)
     if (sliceVal) form.append('slice_val', sliceVal)
+    if (selectedColumns.value.targetMetric) form.append('target_metric', selectedColumns.value.targetMetric)
+    if (selectedColumns.value.flagCol) form.append('flag_col', selectedColumns.value.flagCol)
 
     if (uploadedFiles.value?.quantFile) {
       form.append('quant_file', uploadedFiles.value.quantFile)

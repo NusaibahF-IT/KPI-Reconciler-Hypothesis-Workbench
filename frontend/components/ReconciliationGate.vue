@@ -1,6 +1,5 @@
 <template>
   <div class="space-y-6">
-    <!-- Independent KPI Baseline Strip -->
     <section class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
       <div
         v-for="(val, key) in displayKpis"
@@ -14,12 +13,11 @@
       </div>
     </section>
 
-    <!-- Gate 1 Assertion Table -->
     <section class="card-bento p-6 space-y-5">
       <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div class="flex items-center gap-2.5 flex-wrap">
-            <h3 class="text-lg font-extrabold text-tx">Gate 1 · KPI Reconciliation &amp; Automated Assertions</h3>
+            <h3 class="text-lg font-extrabold text-tx">{{ t.gate1Title }}</h3>
             <span
               class="px-2.5 py-0.5 rounded-md text-xs font-mono font-extrabold border border-ink"
               :class="gateBadgeClass"
@@ -27,48 +25,44 @@
               {{ reconciliation.overall_gate }}
             </span>
           </div>
-          <p class="text-xs text-tx/70 mt-1">
-            Compares your dashboard-reported numbers against independent DuckDB calculations before investigating business hypotheses.
-          </p>
+          <p class="text-xs text-tx/70 mt-1">{{ t.gate1Desc }}</p>
         </div>
 
         <div class="flex flex-wrap gap-2">
           <button type="button" class="btn btn-outline text-xs py-1.5 px-3" @click="addRow">
-            + Add Assertion
+            {{ t.addAssertion }}
           </button>
           <button type="button" :disabled="reconciling" class="btn btn-mint text-xs py-1.5 px-4" @click="runAssertions">
-            {{ reconciling ? 'Checking...' : 'Run Assertions ✓' }}
+            {{ reconciling ? t.checking : t.runAssertions }}
           </button>
         </div>
       </div>
 
-      <!-- Optional Slice Scenario Filter -->
       <div class="p-3.5 rounded-xl bg-canvas border border-line flex flex-wrap items-center gap-3 text-xs">
-        <span class="font-extrabold text-tx">Scenario Filter Test (Optional):</span>
+        <span class="font-extrabold text-tx">{{ t.scenarioFilter }}</span>
         <select v-model="sliceCol" class="px-3 py-1.5 rounded-lg border border-line bg-card text-tx font-mono">
-          <option value="">All Data (No Slice)</option>
+          <option value="">{{ t.allData }}</option>
           <option v-for="dim in dimensions" :key="dim" :value="dim">{{ dim }}</option>
         </select>
         <input
           v-if="sliceCol"
           v-model="sliceVal"
           type="text"
-          placeholder="Exact value (e.g. Fast Food)"
+          :placeholder="t.slicePlaceholder"
           class="px-3 py-1.5 rounded-lg border border-line bg-card text-tx font-mono"
         />
       </div>
 
-      <!-- Editable Snapshot Table -->
       <div class="overflow-x-auto">
         <table class="w-full text-left border-collapse text-xs">
           <thead>
             <tr class="border-b border-line text-tx/70 uppercase text-[11px]">
-              <th class="py-2.5 pr-3">Metric Name</th>
-              <th class="py-2.5 pr-3">Dashboard Value</th>
-              <th class="py-2.5 pr-3">Independent (DuckDB)</th>
-              <th class="py-2.5 pr-3">Diff</th>
-              <th class="py-2.5 pr-3">Status</th>
-              <th class="py-2.5">Root Cause Diagnosis</th>
+              <th class="py-2.5 pr-3">{{ t.colMetric }}</th>
+              <th class="py-2.5 pr-3">{{ t.colDash }}</th>
+              <th class="py-2.5 pr-3">{{ t.colIndep }}</th>
+              <th class="py-2.5 pr-3">{{ t.colDiff }}</th>
+              <th class="py-2.5 pr-3">{{ t.colStatus }}</th>
+              <th class="py-2.5">{{ t.colDiagnosis }}</th>
             </tr>
           </thead>
           <tbody>
@@ -108,7 +102,7 @@
                 </span>
               </td>
               <td class="py-2.5 text-tx/80">
-                {{ matchedResult(row.metric)?.diagnosis || 'Click Run Assertions to verify.' }}
+                {{ matchedResult(row.metric)?.diagnosis || '-' }}
               </td>
             </tr>
           </tbody>
@@ -119,7 +113,7 @@
         v-if="reconciliation.overall_gate === 'FAIL'"
         class="p-4 rounded-xl bg-mag/10 border border-mag/40 text-xs font-semibold text-mag"
       >
-        Guardrail Alert: One or more dashboard assertions are MISMATCH. Resolve number discrepancies before finalizing business recommendations.
+        {{ t.failAlert }}
       </div>
     </section>
   </div>
@@ -133,7 +127,8 @@ const props = defineProps({
   reconciliation: { type: Object, required: true },
   snapshotItems: { type: Array, default: () => [] },
   dimensions: { type: Array, default: () => [] },
-  reconciling: { type: Boolean, default: false }
+  reconciling: { type: Boolean, default: false },
+  t: { type: Object, required: true }
 })
 
 const emit = defineEmits(['re-reconcile'])
@@ -163,8 +158,7 @@ watch(
 
 const displayKpis = computed(() => {
   const k = props.independent?.kpis || {}
-  const entries = Object.entries(k).slice(0, 5)
-  return Object.fromEntries(entries)
+  return Object.fromEntries(Object.entries(k).slice(0, 5))
 })
 
 const gateBadgeClass = computed(() => {
