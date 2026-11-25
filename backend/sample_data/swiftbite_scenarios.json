@@ -1,0 +1,27 @@
+{
+  "scenario_1_fast_food": {
+    "Total Orders": 54,
+    "Net Payment Value": 6078000.0,
+    "Review Coverage (%)": 59.26,
+    "Late Delivery Rate (%)": 39.58,
+    "Delivered Valid Count": 48,
+    "Late Count": 19
+  },
+  "scenario_2_feb_2026": {
+    "Total Orders": 107,
+    "Net Payment Value": 13854000.0,
+    "Review Coverage (%)": 57.01,
+    "Late Delivery Rate (%)": 26.32,
+    "Delivered Valid Count": 95,
+    "Late Count": 25
+  },
+  "scenario_3_zone_north": {
+    "Total Orders": 45,
+    "Net Payment Value": 4909000.0,
+    "Review Coverage (%)": 48.89,
+    "Late Delivery Rate (%)": 29.27,
+    "Delivered Valid Count": 41,
+    "Late Count": 12
+  },
+  "all_tests_passed": true
+}
