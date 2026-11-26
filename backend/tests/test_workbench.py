@@ -112,6 +112,39 @@ def test_indonesian_localization_on_hypotheses_and_memo():
     assert "Memo Insight & Ringkasan Rekonsiliasi KPI" in memo_resp.text
 
 
+def test_owner_access_guard_blocks_public_upload_but_allows_samples(monkeypatch):
+    monkeypatch.setenv("VERCEL", "1")
+    monkeypatch.delenv("OWNER_ACCESS_CODE", raising=False)
+    status_resp = client.get("/api/access/status")
+    assert status_resp.status_code == 200
+    assert status_resp.json()["upload_locked"] is True
+
+    csv_bytes = b"order_id,order_date,sales_channel,order_total\nO1,2026-01-01,Web,100000\n"
+    blocked = client.post(
+        "/api/analyze/upload",
+        files={"quant_file": ("orders.csv", io.BytesIO(csv_bytes), "text/csv")},
+    )
+    assert blocked.status_code == 403
+
+    monkeypatch.setenv("OWNER_ACCESS_CODE", "kh-owner-2026")
+    bad_code = client.post(
+        "/api/analyze/upload",
+        files={"quant_file": ("orders.csv", io.BytesIO(csv_bytes), "text/csv")},
+        headers={"X-Owner-Code": "wrong"},
+    )
+    assert bad_code.status_code == 401
+
+    sample_ok = client.post("/api/analyze/sample/swiftbite_capstone")
+    assert sample_ok.status_code == 200
+
+    owner_ok = client.post(
+        "/api/analyze/upload",
+        files={"quant_file": ("orders.csv", io.BytesIO(csv_bytes), "text/csv")},
+        headers={"X-Owner-Code": "kh-owner-2026"},
+    )
+    assert owner_ok.status_code == 200
+
+
 def test_mismatch_detection_and_upload_and_memo_export():
     csv_bytes = (
         "order_id,order_date,sales_channel,order_total\n"

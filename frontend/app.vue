@@ -55,8 +55,14 @@
         :active-sample-id="activeSampleId"
         :loading="loading"
         :t="t"
+        :upload-locked="uploadLocked"
+        :owner-unlocked="ownerUnlocked"
+        :unlocking="unlocking"
+        :unlock-error="unlockError"
         @load-sample="(id) => loadSample(id)"
         @upload-files="(files) => uploadFiles(files)"
+        @unlock-owner="handleUnlockOwner"
+        @lock-owner="handleLockOwner"
       />
 
       <div v-if="errorMsg" class="p-4 rounded-xl bg-mag/15 border border-mag/50 text-sm font-semibold text-mag">
@@ -140,6 +146,11 @@ const errorMsg = ref('')
 const analysis = ref(null)
 const hypotheses = ref([])
 const activeTab = ref('reconcile')
+const uploadLocked = ref(false)
+const ownerUnlocked = ref(false)
+const ownerCode = ref('')
+const unlocking = ref(false)
+const unlockError = ref('')
 
 const tabs = computed(() => [
   { id: 'reconcile', label: t.value.tabReconcile },
@@ -162,18 +173,64 @@ function setLang(nextLang) {
   }
 }
 
+function ownerHeaders() {
+  return ownerCode.value ? { 'X-Owner-Code': ownerCode.value } : {}
+}
+
 async function init() {
   try {
     const h = await fetch(`${apiBase}/api/health`)
     apiHealthy.value = h.ok
-    const s = await fetch(`${apiBase}/api/samples`)
+    const [s, acc] = await Promise.all([
+      fetch(`${apiBase}/api/samples`),
+      fetch(`${apiBase}/api/access/status`)
+    ])
     if (s.ok) {
       const data = await s.json()
       samples.value = data.samples || []
     }
+    if (acc.ok) {
+      const accData = await acc.json()
+      uploadLocked.value = Boolean(accData.upload_locked)
+      const saved = sessionStorage.getItem('kh_owner_code')
+      if (saved && uploadLocked.value) {
+        await handleUnlockOwner(saved, true)
+      }
+    }
   } catch {
     apiHealthy.value = false
   }
+}
+
+async function handleUnlockOwner(code, silent = false) {
+  unlocking.value = true
+  unlockError.value = ''
+  try {
+    const resp = await fetch(`${apiBase}/api/access/verify`, {
+      method: 'POST',
+      headers: { 'X-Owner-Code': code }
+    })
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}))
+      sessionStorage.removeItem('kh_owner_code')
+      if (!silent) unlockError.value = err.detail || 'Invalid owner access code.'
+      return
+    }
+    ownerCode.value = code
+    ownerUnlocked.value = true
+    sessionStorage.setItem('kh_owner_code', code)
+  } catch {
+    if (!silent) unlockError.value = 'Could not reach verification endpoint.'
+  } finally {
+    unlocking.value = false
+  }
+}
+
+function handleLockOwner() {
+  ownerCode.value = ''
+  ownerUnlocked.value = false
+  uploadedFiles.value = null
+  sessionStorage.removeItem('kh_owner_code')
 }
 
 async function loadSample(caseId, targetMetric = null, flagCol = null) {
@@ -212,7 +269,11 @@ async function uploadFiles({ quantFile, sentimentFile, snapshotFile }, targetMet
     if (snapshotFile) form.append('snapshot_file', snapshotFile)
     if (targetMetric) form.append('target_metric', targetMetric)
     if (flagCol) form.append('flag_col', flagCol)
-    const resp = await fetch(`${apiBase}/api/analyze/upload`, { method: 'POST', body: form })
+    const resp = await fetch(`${apiBase}/api/analyze/upload`, {
+      method: 'POST',
+      headers: ownerHeaders(),
+      body: form
+    })
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({}))
       throw new Error(err.detail || `Failed to analyze upload (${resp.status})`)
@@ -254,7 +315,11 @@ async function handleReconcile({ snapshotItems, sliceCol, sliceVal }) {
       form.append('sample_id', activeSampleId.value)
     }
 
-    const resp = await fetch(`${apiBase}/api/reconcile`, { method: 'POST', body: form })
+    const resp = await fetch(`${apiBase}/api/reconcile`, {
+      method: 'POST',
+      headers: uploadedFiles.value?.quantFile ? ownerHeaders() : {},
+      body: form
+    })
     if (!resp.ok) throw new Error('Reconciliation failed.')
     const data = await resp.json()
     analysis.value = {

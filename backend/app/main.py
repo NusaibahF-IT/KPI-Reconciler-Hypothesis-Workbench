@@ -5,11 +5,12 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 
+from .access_guard import get_access_status, require_owner_upload, verify_owner_code
 from .hypothesis_engine import generate_business_hypotheses
 from .memo_renderer import render_insight_memo_markdown
 from .reconciler import compute_independent_kpis, infer_dataset_roles, load_csv_or_excel, reconcile_snapshot
@@ -98,6 +99,17 @@ def health() -> Dict[str, str]:
     return {"status": "ok", "engine": "duckdb+pandas"}
 
 
+@app.get("/api/access/status")
+def access_status() -> Dict[str, bool]:
+    return get_access_status()
+
+
+@app.post("/api/access/verify")
+def access_verify(x_owner_code: Optional[str] = Header(default=None)) -> Dict[str, bool]:
+    verify_owner_code(x_owner_code)
+    return {"unlocked": True}
+
+
 @app.get("/api/samples")
 def list_samples() -> Dict[str, List[Dict[str, str]]]:
     items = []
@@ -152,7 +164,7 @@ def analyze_sample(
     }
 
 
-@app.post("/api/analyze/upload")
+@app.post("/api/analyze/upload", dependencies=[Depends(require_owner_upload)])
 async def analyze_upload(
     quant_file: UploadFile = File(...),
     sentiment_file: Optional[UploadFile] = File(None),
@@ -236,6 +248,7 @@ async def reconcile_custom_snapshot(
     slice_col: Optional[str] = Form(None),
     slice_val: Optional[str] = Form(None),
     lang: str = Form("en"),
+    x_owner_code: Optional[str] = Header(default=None),
 ):
     """Re-run Gate 1 assertions when analyst edits dashboard snapshot values or tests a slice."""
     try:
@@ -244,6 +257,7 @@ async def reconcile_custom_snapshot(
         raise HTTPException(status_code=400, detail="Invalid snapshot_json.") from exc
 
     if quant_file is not None and quant_file.filename:
+        verify_owner_code(x_owner_code)
         quant_df = load_csv_or_excel(await quant_file.read(), quant_file.filename)
         sentiment_df = (
             load_csv_or_excel(await sentiment_file.read(), sentiment_file.filename)

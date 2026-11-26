@@ -6,9 +6,19 @@
         <h2 class="text-xl md:text-2xl font-extrabold text-tx">{{ t.step1Title }}</h2>
         <p class="text-xs md:text-sm text-tx/75 mt-1">{{ t.step1Desc }}</p>
       </div>
-      <span v-if="loading" class="text-xs font-mono font-bold text-act animate-pulse">
-        {{ t.runningScan }}
-      </span>
+      <div class="flex flex-wrap items-center gap-2.5">
+        <button
+          v-if="uploadLocked && ownerUnlocked"
+          type="button"
+          class="btn btn-outline text-xs py-1.5 px-3"
+          @click="$emit('lock-owner')"
+        >
+          {{ t.ownerUnlockedLock }}
+        </button>
+        <span v-if="loading" class="text-xs font-mono font-bold text-act animate-pulse">
+          {{ t.runningScan }}
+        </span>
+      </div>
     </div>
 
     <div v-if="samples.length > 0" class="mb-5 pb-5 border-b border-line">
@@ -31,7 +41,8 @@
       </div>
     </div>
 
-    <form class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end" @submit.prevent="submitUpload">
+    <!-- Custom Upload Form (Unlocked) OR Public Demo Lock -->
+    <form v-if="canUpload" class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end" @submit.prevent="submitUpload">
       <label class="block text-xs">
         <span class="font-bold text-tx block mb-1">{{ t.quantLabel }}</span>
         <input
@@ -72,31 +83,69 @@
         </button>
       </div>
     </form>
+
+    <div
+      v-else
+      class="border-2 border-dashed border-line rounded-bento p-5 bg-canvas/60 flex flex-col md:flex-row md:items-center justify-between gap-4"
+    >
+      <div class="space-y-1">
+        <span class="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold bg-sun/25 text-tx border border-sun/60">
+          {{ t.demoBadge }}
+        </span>
+        <p class="text-xs md:text-sm font-semibold text-tx">{{ t.demoDesc }}</p>
+        <p v-if="unlockError" class="text-xs font-semibold text-mag">{{ unlockError }}</p>
+      </div>
+
+      <form class="flex items-center gap-2 shrink-0" @submit.prevent="submitUnlock">
+        <input
+          v-model="codeInput"
+          type="password"
+          :placeholder="t.unlockPlaceholder"
+          class="px-3.5 py-2 rounded-full border border-line bg-card text-xs font-mono text-tx w-44 focus:outline-none focus:border-ink"
+        />
+        <button type="submit" :disabled="unlocking || !codeInput.trim()" class="btn btn-primary text-xs py-2 px-4 disabled:opacity-40">
+          {{ unlocking ? t.verifyingBtn : t.unlockBtn }}
+        </button>
+      </form>
+    </div>
   </section>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 
-defineProps({
+const props = defineProps({
   samples: { type: Array, default: () => [] },
   activeSampleId: { type: String, default: null },
   loading: { type: Boolean, default: false },
-  t: { type: Object, required: true }
+  t: { type: Object, required: true },
+  uploadLocked: { type: Boolean, default: false },
+  ownerUnlocked: { type: Boolean, default: false },
+  unlocking: { type: Boolean, default: false },
+  unlockError: { type: String, default: '' }
 })
 
-const emit = defineEmits(['load-sample', 'upload-files'])
+const emit = defineEmits(['load-sample', 'upload-files', 'unlock-owner', 'lock-owner'])
 
 const quantFile = ref(null)
 const sentimentFile = ref(null)
 const snapshotFile = ref(null)
+const codeInput = ref('')
+
+const canUpload = computed(() => !props.uploadLocked || props.ownerUnlocked)
 
 function submitUpload() {
-  if (!quantFile.value) return
+  if (!quantFile.value || !canUpload.value) return
   emit('upload-files', {
     quantFile: quantFile.value,
     sentimentFile: sentimentFile.value,
     snapshotFile: snapshotFile.value
   })
+}
+
+function submitUnlock() {
+  if (!codeInput.value.trim()) return
+  emit('unlock-owner', codeInput.value.trim())
+  codeInput.value = ''
 }
 </script>

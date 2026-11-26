@@ -56,7 +56,13 @@ export const UI_TEXT = {
     actionsPlaceholder: 'e.g. Audit Fast Food prep SLA, Reconcile Marketplace filter',
     decisionSummary: 'Analyst Decision & Executive Summary',
     decisionPlaceholder: 'Write your evidence-based business conclusion and trade-offs here...',
-    memoPreview: 'Generated Memo Preview'
+    memoPreview: 'Generated Memo Preview',
+    demoBadge: '🔒 Public Demo Mode',
+    demoDesc: 'Custom file upload is restricted to the owner. Visitors can explore all features using the sample cases above.',
+    unlockPlaceholder: 'Owner access code...',
+    unlockBtn: 'Unlock',
+    verifyingBtn: 'Verifying...',
+    ownerUnlockedLock: '🔓 Owner Unlocked (Lock)'
   },
   id: {
     subtitle: 'FastAPI + DuckDB + Nuxt 3 · Verifikasi Angka → Hipotesa → Keputusan Analis',
@@ -115,6 +121,12 @@ export const UI_TEXT = {
     actionsPlaceholder: 'mis. Audit SLA persiapan Fast Food, Rekonsiliasi filter Marketplace',
     decisionSummary: 'Keputusan Analis & Ringkasan Eksekutif',
     decisionPlaceholder: 'Tuliskan kesimpulan bisnis berbasis bukti dan pertimbangan trade-off di sini...',
-    memoPreview: 'Pratinjau Memo yang Dihasilkan'
+    memoPreview: 'Pratinjau Memo yang Dihasilkan',
+    demoBadge: '🔒 Mode Demo Publik',
+    demoDesc: 'Upload file pribadi dikunci khusus untuk pemilik. Pengunjung tetap dapat mencoba seluruh fitur memakai kasus contoh di atas.',
+    unlockPlaceholder: 'Kode akses pemilik...',
+    unlockBtn: 'Buka Kunci',
+    verifyingBtn: 'Memverifikasi...',
+    ownerUnlockedLock: '🔓 Mode Pemilik Aktif (Kunci)'
   }
 }
